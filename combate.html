@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Combate</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<!-- Firebase (compat SDK — do not switch to modular imports, keeps this a single portable file) -->
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
+
+<style>
+  :root{
+    --bg:#161f14;
+    --panel:#1f2b1b;
+    --panel-2:#25341f;
+    --line:#3c4a34;
+    --tile-dark:#2c3d27;
+    --tile-light:#3a4f32;
+    --tile-home-a:#3c3123;
+    --tile-home-b:#243645;
+    --lake:#173a4d;
+    --lake-2:#0f2836;
+    --brass:#c9a227;
+    --brass-bright:#e6c34f;
+    --red:#a33d2b;
+    --red-bright:#d1573f;
+    --ink:#eee6d0;
+    --ink-dim:#a9a68f;
+    --shadow: 0 8px 24px rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(1200px 800px at 50% -10%, #223421 0%, var(--bg) 60%);
+    color:var(--ink);
+    font-family:'Oswald',system-ui,sans-serif;
+    font-weight:400;
+    min-height:100%;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+  }
+  .display{font-family:'Black Ops One',system-ui,sans-serif;letter-spacing:.5px;}
+  .screen{width:100%;max-width:560px;padding:18px 14px 40px;display:none;flex-direction:column;gap:14px;min-height:100%;}
+  .screen.active{display:flex;}
+
+  /* ---------- top bar ---------- */
+  .topbar{
+    width:100%;max-width:560px;display:flex;align-items:center;justify-content:space-between;
+    padding:12px 14px 0;
+  }
+  .brand{display:flex;align-items:center;gap:10px;}
+  .brand .badge{
+    width:34px;height:34px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, var(--brass-bright), var(--brass) 55%, #7c621a 100%);
+    display:flex;align-items:center;justify-content:center;
+    font-family:'Black Ops One';font-size:14px;color:#2a2205;
+    box-shadow: inset 0 -3px 4px rgba(0,0,0,.35), 0 2px 6px rgba(0,0,0,.4);
+  }
+  .brand h1{font-size:20px;margin:0;letter-spacing:1px;}
+  .roomchip{
+    font-size:12px;color:var(--ink-dim);background:var(--panel);border:1px solid var(--line);
+    padding:5px 10px;border-radius:20px;
+  }
+
+  /* ---------- generic ---------- */
+  .card{
+    background:linear-gradient(180deg, var(--panel), var(--panel-2));
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:20px;
+    box-shadow:var(--shadow);
+  }
+  h2.display{font-size:26px;margin:0 0 4px;color:var(--brass-bright);}
+  p.sub{color:var(--ink-dim);margin:0 0 14px;font-size:14px;line-height:1.5;}
+  label{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--ink-dim);display:block;margin-bottom:6px;}
+  input[type=text]{
+    width:100%;background:#10160e;border:1px solid var(--line);color:var(--ink);
+    padding:12px 14px;border-radius:8px;font-family:'Oswald';font-size:16px;letter-spacing:1px;
+    outline:none;
+  }
+  input[type=text]:focus{border-color:var(--brass);}
+  .row{display:flex;gap:10px;}
+  .row > *{flex:1;}
+  button{
+    font-family:'Oswald';font-weight:600;font-size:14px;letter-spacing:1px;text-transform:uppercase;
+    border:none;border-radius:9px;padding:13px 16px;cursor:pointer;
+    transition:transform .08s ease, filter .15s ease;
+  }
+  button:active{transform:scale(.97);}
+  button.primary{
+    background:linear-gradient(180deg, var(--brass-bright), var(--brass));
+    color:#241d05;box-shadow:0 3px 0 #7c621a, 0 6px 14px rgba(0,0,0,.4);
+  }
+  button.secondary{
+    background:var(--panel-2);color:var(--ink);border:1px solid var(--line);
+  }
+  button.danger{background:linear-gradient(180deg, var(--red-bright), var(--red));color:#2a0d07;}
+  button:disabled{opacity:.4;cursor:not-allowed;}
+  button.block{width:100%;}
+  .divider{display:flex;align-items:center;gap:10px;color:var(--ink-dim);font-size:12px;margin:6px 0;}
+  .divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line);}
+  .hint{font-size:12px;color:var(--ink-dim);margin-top:8px;line-height:1.5;}
+  .center{text-align:center;}
+  .roomcode-display{
+    font-family:'Black Ops One';font-size:38px;letter-spacing:6px;color:var(--brass-bright);
+    text-align:center;padding:14px 0;
+  }
+  .pulse{animation:pulse 1.6s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+  .spinner{
+    width:16px;height:16px;border-radius:50%;border:2px solid rgba(238,230,208,.25);
+    border-top-color:var(--brass-bright);animation:spin .8s linear infinite;display:inline-block;vertical-align:-3px;margin-right:8px;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* ---------- rank legend ---------- */
+  .legend{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;font-size:11px;color:var(--ink-dim);margin-top:10px;}
+  .legend div{display:flex;justify-content:space-between;border-bottom:1px dotted var(--line);padding:2px 0;}
+
+  /* ---------- setup / game shared board ---------- */
+  .status-strip{
+    display:flex;align-items:center;justify-content:space-between;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-size:13px;
+  }
+  .status-strip .who{display:flex;align-items:center;gap:8px;}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--brass-bright);}
+  .dot.off{background:#555;}
+
+  .board-wrap{display:flex;justify-content:center;}
+  .board{
+    display:grid;
+    grid-template-columns:repeat(10,1fr);
+    grid-template-rows:repeat(10,1fr);
+    width:100%;
+    aspect-ratio:1/1;
+    max-width:520px;
+    gap:2px;
+    background:#0c130a;
+    border:3px solid var(--line);
+    border-radius:8px;
+    padding:5px;
+    box-shadow:var(--shadow);
+  }
+  .cell{
+    position:relative;
+    border-radius:3px;
+    display:flex;align-items:center;justify-content:center;
+    background:var(--tile-dark);
+    cursor:default;
+    overflow:hidden;
+  }
+  .cell.light{background:var(--tile-light);}
+  .cell.home-a{background:var(--tile-home-a);}
+  .cell.home-b{background:var(--tile-home-b);}
+  .cell.lake{
+    background:repeating-linear-gradient(135deg, var(--lake), var(--lake) 6px, var(--lake-2) 6px, var(--lake-2) 12px);
+  }
+  .cell.placeable{cursor:pointer;}
+  .cell.placeable:after{
+    content:"";position:absolute;inset:3px;border:1.5px dashed rgba(230,195,79,.35);border-radius:3px;pointer-events:none;
+  }
+  .cell.selected{box-shadow:inset 0 0 0 3px var(--brass-bright);}
+  .cell.legal{cursor:pointer;}
+  .cell.legal:after{
+    content:"";position:absolute;width:26%;height:26%;border-radius:50%;background:rgba(230,195,79,.55);
+  }
+  .cell.legal.attack:after{
+    width:70%;height:70%;border-radius:6px;background:transparent;border:3px solid rgba(209,87,63,.85);
+  }
+  .cell.last-from{box-shadow:inset 0 0 0 3px rgba(230,195,79,.35);}
+  .cell.last-to{box-shadow:inset 0 0 0 3px rgba(230,195,79,.75);}
+
+  .piece{
+    width:88%;height:88%;border-radius:50%;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    font-family:'Oswald';font-weight:700;
+    box-shadow: inset 0 -4px 6px rgba(0,0,0,.35), inset 0 3px 3px rgba(255,255,255,.15), 0 2px 4px rgba(0,0,0,.5);
+    user-select:none;
+  }
+  .piece.mine{
+    background:radial-gradient(circle at 35% 28%, #3f5a38, #24361f 70%);
+    border:1px solid #4c6b43;
+  }
+  .piece.theirs{
+    background:radial-gradient(circle at 35% 28%, #5a3a30, #34211b 70%);
+    border:1px solid #6b4c3f;
+  }
+  .piece.revealed.theirs{
+    background:radial-gradient(circle at 35% 28%, #6b3f3f, #3a2222 70%);
+    border:1px solid #8a5a5a;
+  }
+  .piece .abbr{font-size:11px;color:var(--ink);letter-spacing:.5px;line-height:1;}
+  .piece .rank{font-size:8px;color:var(--brass-bright);line-height:1;margin-top:1px;}
+  .piece.hidden-back{
+    background:
+      linear-gradient(135deg, rgba(255,255,255,.04) 25%, transparent 25%) ,
+      radial-gradient(circle at 35% 28%, #5a3a30, #2c1c17 75%);
+    background-size: 8px 8px, cover;
+    border:1px solid #6b4c3f;
+  }
+  .piece.hidden-back .abbr{opacity:.35;font-size:16px;}
+  .piece.bomb{background:radial-gradient(circle at 35% 28%, #6b6b6b, #2a2a2a 75%);border-color:#888;}
+  .piece.flag{background:radial-gradient(circle at 35% 28%, var(--brass-bright), #7c621a 75%);border-color:#e6c34f;}
+  .piece.flag .abbr{color:#241d05;}
+
+  @media (max-width:380px){
+    .piece .abbr{font-size:9px;}
+    .piece .rank{font-size:7px;}
+  }
+
+  /* ---------- setup tray ---------- */
+  .tray{
+    display:grid;grid-template-columns:repeat(6,1fr);gap:6px;
+  }
+  .tray-item{
+    background:var(--panel-2);border:1px solid var(--line);border-radius:8px;
+    padding:6px 2px 8px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;
+    position:relative;
+  }
+  .tray-item.selected{outline:2px solid var(--brass-bright);}
+  .tray-item.empty{opacity:.25;cursor:default;}
+  .tray-item .count{
+    position:absolute;top:2px;right:4px;font-size:10px;color:var(--brass-bright);font-weight:700;
+  }
+  .tray-item .abbr{font-size:10px;font-weight:700;}
+  .tray-item .rank{font-size:8px;color:var(--ink-dim);}
+
+  /* ---------- log ---------- */
+  .log{
+    max-height:110px;overflow-y:auto;font-size:12px;color:var(--ink-dim);
+    display:flex;flex-direction:column-reverse;gap:3px;padding:2px;
+  }
+  .log div span.me{color:var(--brass-bright);}
+  .log div span.them{color:var(--red-bright);}
+
+  /* ---------- toast ---------- */
+  #toast{
+    position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
+    background:#0c130a;border:1px solid var(--brass);color:var(--ink);
+    padding:11px 18px;border-radius:24px;font-size:13px;box-shadow:var(--shadow);
+    opacity:0;pointer-events:none;transition:opacity .25s ease, transform .25s ease;z-index:50;
+  }
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(-4px);}
+
+  /* ---------- overlay (winner) ---------- */
+  .overlay{
+    position:fixed;inset:0;background:rgba(8,12,7,.88);display:none;
+    align-items:center;justify-content:center;z-index:60;padding:20px;
+  }
+  .overlay.active{display:flex;}
+  .overlay .card{max-width:360px;text-align:center;}
+  .trophy{font-size:44px;margin-bottom:6px;}
+</style>
+</head>
+<body>
+
+<div class="topbar" id="topbar" style="display:none;">
+  <div class="brand"><div class="badge"></div><h1 class="display">COMBATE</h1></div>
+  <div class="roomchip" id="roomChip">—</div>
+</div>
+
+<!-- ============ HOME ============ -->
+<section class="screen active" id="screen-home">
+  <div style="text-align:center;margin-top:8vh;">
+    <div class="badge" style="width:64px;height:64px;font-size:26px;margin:0 auto 14px;"></div>
+    <h1 class="display" style="font-size:34px;margin:0;">COMBATE</h1>
+  </div>
+
+  <div class="card">
+    <label for="nameInput">Seu nome</label>
+    <input type="text" id="nameInput" placeholder="Ex: Rodrigo" maxlength="16">
+  </div>
+
+  <div class="card">
+    <h2 class="display" style="font-size:18px;">Criar sala</h2>
+    <p class="sub">Gere um código e mande pro seu oponente.</p>
+    <button class="primary block" id="btnCreate">Criar nova sala</button>
+  </div>
+
+  <div class="card">
+    <h2 class="display" style="font-size:18px;">Entrar em uma sala</h2>
+    <p class="sub">Digite o código que você recebeu.</p>
+    <div class="row">
+      <input type="text" id="codeInput" placeholder="CÓDIGO" maxlength="5" style="text-transform:uppercase;">
+      <button class="secondary" id="btnJoin" style="flex:0 0 auto;">Entrar</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SETUP ============ -->
+<section class="screen" id="screen-setup">
+  <div class="card center" id="setupShareCard" style="display:none;padding:14px;">
+    <p class="sub" style="margin-bottom:0;">Código da sala — envie para o seu oponente</p>
+    <div class="roomcode-display" style="font-size:30px;padding:8px 0;" id="setupShareCode">----</div>
+  </div>
+
+  <div class="status-strip">
+    <div class="who"><span class="dot" id="setupOppDot"></span><span id="setupOppLabel">Aguardando oponente…</span></div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div id="setupCount">0 / 40</div>
+      <button class="secondary" id="btnLeaveSetup" style="padding:6px 10px;font-size:11px;">Sair</button>
+    </div>
+  </div>
+
+  <div class="board-wrap"><div class="board" id="setupBoard"></div></div>
+
+  <div class="row">
+    <button class="secondary" id="btnAutoArrange">🎲 Auto-arrumar</button>
+    <button class="secondary" id="btnClearSetup">Limpar</button>
+  </div>
+
+  <div class="card" style="padding:12px;">
+    <label style="margin-bottom:8px;">Suas peças (toque e depois toque no tabuleiro)</label>
+    <div class="tray" id="tray"></div>
+  </div>
+
+  <button class="primary block" id="btnReady" disabled>Pronto para batalha</button>
+  <p class="hint center" id="setupHint">Posicione todas as 40 peças no seu território.</p>
+</section>
+
+<!-- ============ GAME ============ -->
+<section class="screen" id="screen-game">
+  <div class="status-strip">
+    <div class="who"><span class="dot" id="turnDot"></span><span id="turnLabel">—</span></div>
+    <div id="myFlagStatus" style="font-size:11px;color:var(--ink-dim);"></div>
+  </div>
+
+  <div class="board-wrap"><div class="board" id="gameBoard"></div></div>
+
+  <div class="card" style="padding:10px 14px;">
+    <div class="log" id="log"></div>
+  </div>
+
+  <div class="row">
+    <button class="secondary" id="btnResign">Desistir</button>
+  </div>
+</section>
+
+<div id="toast"></div>
+
+<div class="overlay" id="overlay">
+  <div class="card">
+    <div class="trophy" id="overlayEmoji">🏆</div>
+    <h2 class="display" id="overlayTitle">Vitória!</h2>
+    <p class="sub" id="overlaySub"></p>
+    <button class="primary block" id="btnRematch">Jogar novamente</button>
+    <button class="secondary block" id="btnBackHome" style="margin-top:8px;">Sair para o início</button>
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+   COMBATE — online build, single-file PWA
+   Sync layer: Firebase Realtime Database.
+
+   >>> SETUP REQUIRED BEFORE THIS WORKS <<<
+   1. Go to your Firebase project (console.firebase.google.com) — you can
+      reuse the SAME project you already have for "Xyko tá Rico", this app
+      writes to its own top-level node ("combate_games") so it won't touch
+      that data.
+   2. Project settings → your web app → copy the config object and paste it
+      into FIREBASE_CONFIG below, replacing the placeholder.
+   3. Realtime Database → Rules → paste this (simple, no auth needed since
+      it's just you two):
+         {
+           "rules": {
+             "combate_games": {
+               "$roomCode": { ".read": true, ".write": true }
+             }
+           }
+         }
+   4. Save this file from the artifact panel's Download button — NOT via
+      Chrome "Save Page As", which rewrites the CDN <script> tags and
+      breaks Firebase. Upload the downloaded file to GitHub Pages.
+
+   NOTE ON FAIRNESS: this uses a plain shared database with no server-side
+   referee, so in principle someone who opened devtools could inspect the
+   raw board data and see hidden pieces. For a friendly game between
+   people who trust each other that's a non-issue — just flagging it so
+   it's not a surprise.
+   ========================================================================= */
+
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBJFBxk-jwy8BRrpdhs0uBlCHdOTknLztI",
+  authDomain: "combate-6f7a8.firebaseapp.com",
+  databaseURL: "https://combate-6f7a8-default-rtdb.firebaseio.com",
+  projectId: "combate-6f7a8",
+  storageBucket: "combate-6f7a8.firebasestorage.app",
+  messagingSenderId: "797922725902",
+  appId: "1:797922725902:web:1f740ca493ff059d75ac5f"
+};
+
+let db = null;
+let firebaseReady = false;
+try {
+  firebase.initializeApp(FIREBASE_CONFIG);
+  db = firebase.database();
+  firebaseReady = true;
+} catch (e) {
+  console.error("Firebase init failed", e);
+}
+
+/* ---------------- Ranks (Combate brasileiro) ---------------- */
+const RANKS = [
+  { key:'MAR', rank:10, name:'Marechal',    count:1 },
+  { key:'GEN', rank:9,  name:'General',     count:1 },
+  { key:'COR', rank:8,  name:'Coronel',     count:2 },
+  { key:'MAJ', rank:7,  name:'Major',       count:3 },
+  { key:'CAP', rank:6,  name:'Capitão',     count:4 },
+  { key:'TEN', rank:5,  name:'Tenente',     count:4 },
+  { key:'SAR', rank:4,  name:'Sargento',    count:4 },
+  { key:'CAB', rank:3,  name:'Cabo Armeiro',count:5 },
+  { key:'SOL', rank:2,  name:'Soldado',     count:8 },
+  { key:'ESP', rank:1,  name:'Espião',      count:1 },
+  { key:'BMB', rank:'B',name:'Bomba',       count:6 },
+  { key:'BAN', rank:'F',name:'Bandeira',    count:1 },
+];
+const RANK_BY_KEY = Object.fromEntries(RANKS.map(r=>[r.key,r]));
+const TOTAL_PIECES = RANKS.reduce((s,r)=>s+r.count,0); // 40
+
+/* ---------------- Board geometry ---------------- */
+// row 0..3 = home of player B (north), row 6..9 = home of player A (south), 4-5 = middle w/ lakes
+const LAKE_CELLS = new Set();
+[[4,2],[4,3],[5,2],[5,3],[4,6],[4,7],[5,6],[5,7]].forEach(([r,c])=>LAKE_CELLS.add(r*10+c));
+function idx(r,c){return r*10+c;}
+function rc(i){return [Math.floor(i/10), i%10];}
+function isLake(i){return LAKE_CELLS.has(i);}
+function homeRowsFor(player){ return player==='p1' ? [6,7,8,9] : [0,1,2,3]; }
+function inHome(i, player){
+  const [r]= rc(i);
+  return homeRowsFor(player).includes(r);
+}
+
+/* ---------------- State ---------------- */
+let myName = '';
+let roomCode = null;
+let myPlayer = null; // 'p1' or 'p2'
+let unsub = null;
+let gameState = null; // live mirror of DB
+let setupBoard = new Array(100).fill(null); // local pre-ready board: {key,rank,player}
+let selectedTrayKey = null;
+let selectedCellIndex = null; // during game phase, selected own piece index
+let legalMoves = []; // during game phase [{to, attack:bool}]
+
+const $ = (id)=>document.getElementById(id);
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  $(id).classList.add('active');
+  $('topbar').style.display = id==='screen-home' ? 'none' : 'flex';
+}
+function toast(msg, ms=2600){
+  const t=$('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'), ms);
+}
+
+/* ---------------- Room code helpers ---------------- */
+function genCode(){
+  const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let s=''; for(let i=0;i<4;i++) s+=chars[Math.floor(Math.random()*chars.length)];
+  return s;
+}
+
+/* ---------------- Create / Join ---------------- */
+$('btnCreate').addEventListener('click', async ()=>{
+  myName = $('nameInput').value.trim() || 'Jogador 1';
+  if(!firebaseReady){ toast('Configure o Firebase no código antes de jogar (veja comentário no topo do arquivo).', 5000); return; }
+  roomCode = genCode();
+  myPlayer = 'p1';
+  const initial = {
+    createdAt: Date.now(),
+    status: 'setup',
+    turn: 'p1',
+    players: { p1: { name: myName, ready:false }, p2: null },
+    board: null,
+    setup: { p1: null, p2: null },
+    log: [],
+    winner: null,
+    lastMove: null
+  };
+  await db.ref('combate_games/'+roomCode).set(initial);
+  $('roomChip').textContent = 'Sala '+roomCode;
+  showScreen('screen-setup');
+  listenRoom();
+});
+
+$('btnJoin').addEventListener('click', async ()=>{
+  myName = $('nameInput').value.trim() || 'Jogador 2';
+  const code = $('codeInput').value.trim().toUpperCase();
+  if(!code){ toast('Digite o código da sala.'); return; }
+  if(!firebaseReady){ toast('Configure o Firebase no código antes de jogar.', 5000); return; }
+  const snap = await db.ref('combate_games/'+code).get();
+  if(!snap.exists()){ toast('Sala não encontrada.'); return; }
+  const data = snap.val();
+  if(data.players && data.players.p2){ toast('Essa sala já está cheia.'); return; }
+  roomCode = code;
+  myPlayer = 'p2';
+  await db.ref('combate_games/'+code+'/players/p2').set({name:myName, ready:false});
+  $('roomChip').textContent = 'Sala '+roomCode;
+  showScreen('screen-setup');
+  listenRoom();
+});
+
+$('btnLeaveSetup').addEventListener('click', async ()=>{
+  if(!confirm('Sair da sala?')) return;
+  const opponentPresent = gameState && gameState.players && gameState.players.p1 && gameState.players.p2;
+  if(roomCode && myPlayer==='p1' && !opponentPresent){
+    await db.ref('combate_games/'+roomCode).remove();
+  } else if(roomCode){
+    await db.ref(`combate_games/${roomCode}/players/${myPlayer}`).remove();
+  }
+  if(unsub) unsub();
+  roomCode=null; myPlayer=null; gameState=null;
+  setupBoard = new Array(100).fill(null);
+  showScreen('screen-home');
+});
+
+$('btnBackHome').addEventListener('click', ()=>{
+  $('overlay').classList.remove('active');
+  if(unsub) unsub();
+  roomCode=null; myPlayer=null; gameState=null;
+  setupBoard = new Array(100).fill(null);
+  showScreen('screen-home');
+});
+
+/* ---------------- Room listener ---------------- */
+function listenRoom(){
+  if(unsub) unsub();
+  const ref = db.ref('combate_games/'+roomCode);
+  const cb = ref.on('value', snap=>{
+    if(!snap.exists()){ toast('A sala foi encerrada.'); showScreen('screen-home'); return; }
+    gameState = snap.val();
+    onStateChange();
+  });
+  unsub = ()=>ref.off('value', cb);
+}
+
+function onStateChange(){
+  if(!gameState) return;
+
+  if(gameState.status==='setup'){
+    showScreen('screen-setup');
+    renderSetupScreen();
+  } else if(gameState.status==='playing'){
+    showScreen('screen-game');
+    renderGameScreen();
+  } else if(gameState.status==='finished'){
+    showScreen('screen-game');
+    renderGameScreen();
+    showWinner();
+  }
+}
+
+/* =========================================================================
+   SETUP PHASE
+   ========================================================================= */
+function remainingCounts(){
+  const placed = {};
+  setupBoard.forEach(cell=>{ if(cell) placed[cell.key]=(placed[cell.key]||0)+1; });
+  const rem = {};
+  RANKS.forEach(r=>{ rem[r.key] = r.count - (placed[r.key]||0); });
+  return rem;
+}
+
+function renderSetupScreen(){
+  const opp = myPlayer==='p1' ? gameState.players.p2 : gameState.players.p1;
+  $('setupOppLabel').textContent = opp ? opp.name+' está na sala' : 'Aguardando oponente…';
+  $('setupOppDot').className = 'dot' + (opp? '' : ' off');
+
+  if(!opp && roomCode){
+    $('setupShareCard').style.display='block';
+    $('setupShareCode').textContent = roomCode;
+  } else {
+    $('setupShareCard').style.display='none';
+  }
+
+  renderTray();
+  renderSetupBoard();
+
+  const placedCount = setupBoard.filter(Boolean).length;
+  $('setupCount').textContent = placedCount+' / '+TOTAL_PIECES;
+  $('btnReady').disabled = placedCount !== TOTAL_PIECES;
+
+  const myReady = gameState.players[myPlayer] && gameState.players[myPlayer].ready;
+  const oppReady = opp && opp.ready;
+  if(myReady){
+    $('setupHint').textContent = oppReady ? 'Os dois estão prontos — iniciando...' : 'Você está pronto. Esperando seu oponente...';
+  } else {
+    $('setupHint').textContent = 'Posicione todas as 40 peças no seu território.';
+  }
+}
+
+function renderTray(){
+  const tray=$('tray'); tray.innerHTML='';
+  const rem = remainingCounts();
+  RANKS.forEach(r=>{
+    const el=document.createElement('div');
+    el.className='tray-item'+(rem[r.key]===0?' empty':'')+(selectedTrayKey===r.key?' selected':'');
+    el.innerHTML = `<span class="count">${rem[r.key]}</span><span class="abbr">${r.key}</span><span class="rank">${r.name}</span>`;
+    if(rem[r.key]>0){
+      el.addEventListener('click', ()=>{
+        selectedTrayKey = (selectedTrayKey===r.key)? null : r.key;
+        renderTray();
+      });
+    }
+    tray.appendChild(el);
+  });
+}
+
+function renderSetupBoard(){
+  const board=$('setupBoard');
+  if(board.childElementCount!==100){
+    board.innerHTML='';
+    for(let i=0;i<100;i++){
+      const cell=document.createElement('div');
+      cell.dataset.i=i;
+      board.appendChild(cell);
+    }
+  }
+  const myReady = gameState.players[myPlayer] && gameState.players[myPlayer].ready;
+  for(let i=0;i<100;i++){
+    const [r,c]=rc(i);
+    const cell=board.children[i];
+    cell.className='cell'+(((r+c)%2===0)?' light':'');
+    cell.onclick=null;
+    if(isLake(i)){ cell.className+=' lake'; cell.innerHTML=''; continue; }
+
+    const mine = inHome(i, myPlayer);
+    if(mine) cell.className += myPlayer==='p1' ? ' home-a' : ' home-b';
+
+    cell.innerHTML='';
+    const piece = setupBoard[i];
+    if(piece){
+      cell.appendChild(pieceEl(piece.key, true, false));
+      if(mine && !myReady){
+        cell.classList.add('placeable');
+        cell.onclick = ()=>{
+          // pick the piece back up (or swap with selected tray piece)
+          if(selectedTrayKey){
+            const removed = setupBoard[i];
+            setupBoard[i] = { key:selectedTrayKey };
+            selectedTrayKey = null;
+            renderSetupScreen();
+          } else {
+            setupBoard[i] = null;
+            renderSetupScreen();
+          }
+        };
+      }
+    } else if(mine && !myReady){
+      cell.classList.add('placeable');
+      cell.onclick = ()=>{
+        if(!selectedTrayKey){ toast('Escolha uma peça primeiro.'); return; }
+        setupBoard[i] = { key:selectedTrayKey };
+        const rem = remainingCounts();
+        selectedTrayKey = rem[selectedTrayKey] > 0 ? selectedTrayKey : null;
+        renderSetupScreen();
+      };
+    }
+  }
+}
+
+function pieceEl(key, mine, revealed){
+  const info = RANK_BY_KEY[key];
+  const wrap=document.createElement('div');
+  let cls='piece '+(mine?'mine':'theirs')+(revealed?' revealed':'');
+  if(!mine && !revealed) cls='piece hidden-back';
+  if(key==='BMB') cls+=' bomb';
+  if(key==='BAN') cls+=' flag';
+  wrap.className=cls;
+  if(mine || revealed){
+    wrap.innerHTML = `<div class="abbr">${key==='BAN'?'★':key}</div><div class="rank">${typeof info.rank==='number'?info.rank:''}</div>`;
+  } else {
+    wrap.innerHTML = `<div class="abbr">?</div>`;
+  }
+  return wrap;
+}
+
+$('btnAutoArrange').addEventListener('click', ()=>{
+  const myReady = gameState.players[myPlayer] && gameState.players[myPlayer].ready;
+  if(myReady) return;
+  autoArrange();
+  renderSetupScreen();
+});
+$('btnClearSetup').addEventListener('click', ()=>{
+  const myReady = gameState.players[myPlayer] && gameState.players[myPlayer].ready;
+  if(myReady) return;
+  setupBoard = new Array(100).fill(null);
+  selectedTrayKey = null;
+  renderSetupScreen();
+});
+
+function autoArrange(){
+  setupBoard = new Array(100).fill(null);
+  const bag=[];
+  RANKS.forEach(r=>{ for(let n=0;n<r.count;n++) bag.push(r.key); });
+  // shuffle
+  for(let i=bag.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [bag[i],bag[j]]=[bag[j],bag[i]]; }
+  const rows = homeRowsFor(myPlayer);
+  const cells = [];
+  rows.forEach(r=>{ for(let c=0;c<10;c++) cells.push(idx(r,c)); });
+  cells.forEach((cellIdx, n)=>{ setupBoard[cellIdx] = { key: bag[n] }; });
+}
+
+$('btnReady').addEventListener('click', async ()=>{
+  const placedCount = setupBoard.filter(Boolean).length;
+  if(placedCount !== TOTAL_PIECES){ toast('Posicione todas as 40 peças.'); return; }
+
+  const setupData = {};
+  setupBoard.forEach((p,i)=>{ if(p) setupData[i]=p.key; });
+
+  await db.ref(`combate_games/${roomCode}/setup/${myPlayer}`).set(setupData);
+  await db.ref(`combate_games/${roomCode}/players/${myPlayer}/ready`).set(true);
+
+  // if I'm p1, watch for both-ready to build the real board (avoid double-write race by letting p1 own this transition)
+  if(myPlayer==='p1'){
+    checkBothReadyAndStart();
+  } else {
+    // p2 also checks in case p1 already had ready=true and is waiting
+    checkBothReadyAndStart();
+  }
+});
+
+async function checkBothReadyAndStart(){
+  const snap = await db.ref(`combate_games/${roomCode}`).get();
+  const data = snap.val();
+  if(!data || data.status!=='setup') return;
+  const p1r = data.players.p1 && data.players.p1.ready;
+  const p2r = data.players.p2 && data.players.p2.ready;
+  if(p1r && p2r && data.setup && data.setup.p1 && data.setup.p2){
+    // build combined board (idempotent — use a lock via status field write)
+    const board = new Array(100).fill(null);
+    Object.entries(data.setup.p1).forEach(([i,key])=>{ board[i] = { key, owner:'p1', revealed:false }; });
+    Object.entries(data.setup.p2).forEach(([i,key])=>{ board[i] = { key, owner:'p2', revealed:false }; });
+    await db.ref(`combate_games/${roomCode}`).update({
+      board: board,
+      status: 'playing',
+      turn: 'p1',
+      log: ['A batalha começou!']
+    });
+  }
+}
+
+/* =========================================================================
+   GAME PHASE
+   ========================================================================= */
+function movementType(key){
+  if(key==='BMB' || key==='BAN') return 'none';
+  if(key==='SOL') return 'multi';
+  return 'single';
+}
+
+function computeLegalMoves(i){
+  const piece = gameState.board[i];
+  if(!piece || piece.owner!==myPlayer) return [];
+  const type = movementType(piece.key);
+  if(type==='none') return [];
+  const [r,c] = rc(i);
+  const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+  const moves = [];
+  dirs.forEach(([dr,dc])=>{
+    let step=1;
+    while(true){
+      const nr=r+dr*step, nc=c+dc*step;
+      if(nr<0||nr>9||nc<0||nc>9) break;
+      const ni = idx(nr,nc);
+      if(isLake(ni)) break;
+      const occ = gameState.board[ni];
+      if(!occ){
+        moves.push({to:ni, attack:false});
+        if(type==='single') break;
+        step++;
+        continue;
+      } else {
+        if(occ.owner!==myPlayer){ moves.push({to:ni, attack:true}); }
+        break;
+      }
+    }
+  });
+  return moves;
+}
+
+function renderGameScreen(){
+  const board=$('gameBoard');
+  if(board.childElementCount!==100){
+    board.innerHTML='';
+    for(let i=0;i<100;i++){ const cell=document.createElement('div'); cell.dataset.i=i; board.appendChild(cell); }
+  }
+  const myTurn = gameState.turn===myPlayer && gameState.status==='playing';
+  const oppName = (myPlayer==='p1'? gameState.players.p2 : gameState.players.p1)?.name || 'Oponente';
+  const myName_ = gameState.players[myPlayer]?.name || 'Você';
+
+  $('turnLabel').textContent = gameState.status!=='playing' ? 'Fim de jogo' : (myTurn? 'Sua vez' : `Vez de ${oppName}`);
+  $('turnDot').className = 'dot'+(myTurn?'':' off');
+
+  const lastFrom = gameState.lastMove ? gameState.lastMove.from : null;
+  const lastTo = gameState.lastMove ? gameState.lastMove.to : null;
+
+  for(let i=0;i<100;i++){
+    const [r,c]=rc(i);
+    const cell=board.children[i];
+    let cls='cell'+(((r+c)%2===0)?' light':'');
+    if(isLake(i)) cls+=' lake';
+    if(selectedCellIndex===i) cls+=' selected';
+    const legal = legalMoves.find(m=>m.to===i);
+    if(legal) cls += legal.attack? ' legal attack' : ' legal';
+    if(i===lastFrom) cls+=' last-from';
+    if(i===lastTo) cls+=' last-to';
+    cell.className=cls;
+    cell.innerHTML='';
+    cell.onclick=null;
+
+    const piece = gameState.board ? gameState.board[i] : null;
+    if(piece){
+      const mine = piece.owner===myPlayer;
+      cell.appendChild(pieceEl(piece.key, mine, piece.revealed));
+    }
+
+    if(gameState.status==='playing'){
+      if(legal){
+        cell.onclick = ()=>attemptMove(selectedCellIndex, i, legal.attack);
+      } else if(piece && piece.owner===myPlayer && myTurn){
+        const moves = computeLegalMoves(i);
+        if(moves.length>0){
+          cell.onclick = ()=>{ selectedCellIndex=i; legalMoves=moves; renderGameScreen(); };
+        }
+      } else if(selectedCellIndex!==null){
+        cell.onclick = ()=>{ selectedCellIndex=null; legalMoves=[]; renderGameScreen(); };
+      }
+    }
+  }
+
+  const logBox=$('log');
+  logBox.innerHTML='';
+  (gameState.log||[]).slice(-30).reverse().forEach(line=>{
+    const d=document.createElement('div'); d.textContent=line; logBox.appendChild(d);
+  });
+}
+
+async function attemptMove(from, to, isAttack){
+  selectedCellIndex=null; legalMoves=[];
+  const board = gameState.board.slice();
+  const mover = board[from];
+  const target = board[to];
+  let logLine = '';
+  let flagCaptured = false;
+
+  if(!isAttack){
+    board[to] = mover;
+    board[from] = null;
+    logLine = `${gameState.players[myPlayer].name} moveu ${RANK_BY_KEY[mover.key].name}.`;
+  } else {
+    const atkInfo = RANK_BY_KEY[mover.key];
+    const defInfo = RANK_BY_KEY[target.key];
+    const attackerName = gameState.players[myPlayer].name;
+    const defenderName = gameState.players[target.owner].name;
+
+    if(target.key==='BAN'){
+      flagCaptured = true;
+      board[to] = { ...mover, revealed:true };
+      board[from] = null;
+      logLine = `🏁 ${attackerName} capturou a bandeira de ${defenderName}!`;
+    } else if(target.key==='BMB'){
+      if(mover.key==='CAB'){
+        board[to] = { ...mover, revealed:true };
+        board[from] = null;
+        logLine = `💣 ${attackerName} (Cabo Armeiro) desarmou uma bomba de ${defenderName}!`;
+      } else {
+        board[from] = null;
+        board[to] = { ...target, revealed:true };
+        logLine = `💥 A bomba de ${defenderName} destruiu o(a) ${atkInfo.name} de ${attackerName}!`;
+      }
+    } else {
+      const atkWinsSpecial = (mover.key==='ESP' && target.key==='MAR');
+      if(atkWinsSpecial){
+        board[to] = { ...mover, revealed:true };
+        board[from] = null;
+        logLine = `🗡️ O Espião de ${attackerName} eliminou o Marechal de ${defenderName}!`;
+      } else if(atkInfo.rank > defInfo.rank){
+        board[to] = { ...mover, revealed:true };
+        board[from] = null;
+        logLine = `⚔️ ${attackerName}: ${atkInfo.name} venceu ${defInfo.name} de ${defenderName}.`;
+      } else if(atkInfo.rank < defInfo.rank){
+        board[from] = null;
+        board[to] = { ...target, revealed:true };
+        logLine = `⚔️ ${defenderName}: ${defInfo.name} resistiu ao ataque de ${attackerName} (${atkInfo.name}).`;
+      } else {
+        board[from] = null;
+        board[to] = null;
+        logLine = `💢 Empate! ${atkInfo.name} de ${attackerName} e ${defInfo.name} de ${defenderName} se eliminaram.`;
+      }
+    }
+  }
+
+  const nextTurn = myPlayer==='p1' ? 'p2' : 'p1';
+  const newLog = [...(gameState.log||[]), logLine];
+  const update = {
+    board, log:newLog,
+    lastMove: { from, to },
+    turn: flagCaptured ? gameState.turn : nextTurn,
+  };
+
+  if(flagCaptured){
+    update.status='finished';
+    update.winner=myPlayer;
+  } else {
+    // check if opponent has any legal move at all -> otherwise they lose
+    const oppHasMove = boardHasAnyMove(board, nextTurn);
+    if(!oppHasMove){
+      update.status='finished';
+      update.winner=myPlayer;
+      update.log=[...newLog, `${gameState.players[myPlayer].name} venceu — o oponente não tem mais movimentos possíveis.`];
+    }
+  }
+
+  await db.ref(`combate_games/${roomCode}`).update(update);
+}
+
+function boardHasAnyMove(board, player){
+  for(let i=0;i<100;i++){
+    const p=board[i];
+    if(p && p.owner===player && movementType(p.key)!=='none'){
+      const [r,c]=rc(i);
+      const dirs=[[-1,0],[1,0],[0,-1],[0,1]];
+      for(const [dr,dc] of dirs){
+        const nr=r+dr, nc=c+dc;
+        if(nr<0||nr>9||nc<0||nc>9) continue;
+        const ni=idx(nr,nc);
+        if(isLake(ni)) continue;
+        const occ=board[ni];
+        if(!occ || occ.owner!==player) return true;
+      }
+    }
+  }
+  return false;
+}
+
+$('btnResign').addEventListener('click', async ()=>{
+  if(!confirm('Tem certeza que quer desistir?')) return;
+  const winner = myPlayer==='p1'?'p2':'p1';
+  await db.ref(`combate_games/${roomCode}`).update({
+    status:'finished', winner,
+    log:[...(gameState.log||[]), `${gameState.players[myPlayer].name} desistiu.`]
+  });
+});
+
+function showWinner(){
+  if(showWinner._shown===gameState.winner+roomCode) return;
+  showWinner._shown = gameState.winner+roomCode;
+  const iWon = gameState.winner===myPlayer;
+  $('overlayEmoji').textContent = iWon ? '🏆' : '🏳️';
+  $('overlayTitle').textContent = iWon ? 'Vitória!' : 'Derrota';
+  $('overlaySub').textContent = iWon
+    ? `Você venceu ${(myPlayer==='p1'?gameState.players.p2:gameState.players.p1)?.name || 'o oponente'}.`
+    : `${(gameState.winner==='p1'?gameState.players.p1:gameState.players.p2)?.name || 'O oponente'} venceu esta partida.`;
+  $('overlay').classList.add('active');
+}
+
+$('btnRematch').addEventListener('click', async ()=>{
+  $('overlay').classList.remove('active');
+  showWinner._shown = null;
+  setupBoard = new Array(100).fill(null);
+  selectedCellIndex=null; legalMoves=[];
+  if(myPlayer==='p1'){
+    await db.ref(`combate_games/${roomCode}`).update({
+      status:'setup', board:null, setup:{p1:null,p2:null}, turn:'p1',
+      log:[], winner:null, lastMove:null,
+      'players/p1/ready': false, 'players/p2/ready': false
+    });
+  }
+});
+
+/* enter key helpers */
+$('codeInput').addEventListener('keydown', e=>{ if(e.key==='Enter') $('btnJoin').click(); });
+$('nameInput').addEventListener('keydown', e=>{ if(e.key==='Enter') $('btnCreate').click(); });
+</script>
+</body>
+</html>
