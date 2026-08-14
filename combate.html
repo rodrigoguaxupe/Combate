@@ -302,6 +302,10 @@
   <div class="card">
     <h2 class="display" style="font-size:18px;">Criar sala</h2>
     <p class="sub">Gere um código e mande pro seu oponente.</p>
+    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px;">
+      <input type="checkbox" id="timersToggle" checked style="width:18px;height:18px;accent-color:var(--brass);">
+      <span style="font-size:13px;color:var(--ink);">Usar cronômetro (5 min para montar, 2 min por jogada)</span>
+    </label>
     <button class="primary block" id="btnCreate">Criar nova sala</button>
   </div>
 
@@ -342,6 +346,7 @@
   <div class="status-strip">
     <div class="who"><span class="dot" id="setupOppDot"></span><span id="setupOppLabel">Aguardando oponente…</span></div>
     <div style="display:flex;align-items:center;gap:10px;">
+      <div id="setupTimer" style="display:none;font-weight:700;color:var(--brass-bright);">5:00</div>
       <div id="setupCount">0 / 40</div>
       <button class="secondary" id="btnLeaveSetup" style="padding:6px 10px;font-size:11px;">Sair</button>
     </div>
@@ -367,7 +372,10 @@
 <section class="screen" id="screen-game">
   <div class="status-strip">
     <div class="who"><span class="dot" id="turnDot"></span><span id="turnLabel">—</span></div>
-    <div id="myFlagStatus" style="font-size:11px;color:var(--ink-dim);"></div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div id="turnTimer" style="display:none;font-weight:700;color:var(--brass-bright);">2:00</div>
+      <div id="myFlagStatus" style="font-size:11px;color:var(--ink-dim);"></div>
+    </div>
   </div>
 
   <div class="board-wrap"><div class="board" id="gameBoard"></div></div>
@@ -382,6 +390,31 @@
 </section>
 
 <div id="toast"></div>
+
+<button id="btnChatToggle" style="display:none;position:fixed;bottom:18px;right:18px;z-index:55;
+  width:52px;height:52px;border-radius:50%;background:linear-gradient(180deg, var(--brass-bright), var(--brass));
+  border:none;box-shadow:0 4px 14px rgba(0,0,0,.5);font-size:22px;cursor:pointer;">💬
+  <span id="chatBadge" style="display:none;position:absolute;top:-2px;right:-2px;background:var(--red-bright);
+    color:#fff;font-size:10px;font-weight:700;border-radius:50%;width:18px;height:18px;
+    align-items:center;justify-content:center;">•</span>
+</button>
+
+<div id="chatPanel" style="display:none;position:fixed;inset:0;background:rgba(8,12,7,.7);z-index:56;">
+  <div style="position:absolute;bottom:0;left:0;right:0;max-width:560px;margin:0 auto;
+    background:var(--panel);border:1px solid var(--line);border-radius:16px 16px 0 0;
+    box-shadow:var(--shadow);display:flex;flex-direction:column;max-height:70vh;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line);">
+      <span class="display" style="font-size:16px;">💬 Chat</span>
+      <button class="secondary" id="btnChatClose" style="padding:6px 10px;font-size:11px;">Fechar</button>
+    </div>
+    <div id="chatMessages" style="flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:8px;min-height:200px;"></div>
+    <div style="display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--line);">
+      <input type="text" id="chatInput" placeholder="Mensagem..." maxlength="200"
+        style="flex:1;background:#10160e;border:1px solid var(--line);color:var(--ink);padding:11px 14px;border-radius:20px;font-family:'Oswald';outline:none;">
+      <button class="primary" id="btnChatSend" style="border-radius:50%;width:44px;height:44px;padding:0;flex-shrink:0;">➤</button>
+    </div>
+  </div>
+</div>
 
 <div class="overlay" id="overlay">
   <div class="card">
@@ -561,6 +594,132 @@ function toast(msg, ms=2600){
   clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'), ms);
 }
 
+/* ---------------- Timers (setup + turn) ---------------- */
+const SETUP_TIME_MS = 5*60*1000;
+const TURN_TIME_MS = 2*60*1000;
+let autoSetupInFlight = false;
+let skipInFlight = false;
+
+function fmtClock(ms){
+  const s = Math.max(0, Math.ceil(ms/1000));
+  const m = Math.floor(s/60);
+  const r = s%60;
+  return `${m}:${r<10?'0':''}${r}`;
+}
+
+function tickTimers(){
+  if(!gameState || !gameState.timersEnabled || !roomCode){
+    $('setupTimer').style.display='none';
+    $('turnTimer').style.display='none';
+    return;
+  }
+
+  if(gameState.status==='setup' && gameState.setupStartedAt){
+    const remain = SETUP_TIME_MS - (Date.now()-gameState.setupStartedAt);
+    const el = $('setupTimer');
+    el.style.display='block';
+    el.textContent = fmtClock(remain);
+    el.style.color = remain<30000 ? 'var(--red-bright)' : 'var(--brass-bright)';
+    const amReady = gameState.players[myPlayer] && gameState.players[myPlayer].ready;
+    if(remain<=0 && !amReady && !autoSetupInFlight){
+      autoSetupInFlight = true;
+      autoArrange();
+      renderSetupScreen();
+      submitReady().finally(()=>{ autoSetupInFlight=false; });
+    }
+  } else {
+    $('setupTimer').style.display='none';
+  }
+
+  if(gameState.status==='playing' && gameState.turnStartedAt){
+    const remain = TURN_TIME_MS - (Date.now()-gameState.turnStartedAt);
+    const el = $('turnTimer');
+    el.style.display='block';
+    el.textContent = fmtClock(remain);
+    el.style.color = remain<20000 ? 'var(--red-bright)' : 'var(--brass-bright)';
+    const amWaiting = gameState.turn !== myPlayer;
+    if(remain<=0 && amWaiting && !skipInFlight){
+      skipInFlight = true;
+      const slowName = gameState.players[gameState.turn]?.name || 'Oponente';
+      db.ref(`combate_games/${roomCode}`).update({
+        turn: myPlayer,
+        turnStartedAt: firebase.database.ServerValue.TIMESTAMP,
+        log: [...(gameState.log||[]), `⏱️ ${slowName} não jogou a tempo — vez pulada.`]
+      }).catch(e=>console.error(e)).finally(()=>{ skipInFlight=false; });
+    }
+  } else {
+    $('turnTimer').style.display='none';
+  }
+}
+setInterval(tickTimers, 1000);
+
+/* ---------------- Chat ---------------- */
+let chatUnsub = null;
+let chatOpen = false;
+let chatUnread = 0;
+
+function startChatListener(){
+  if(chatUnsub || !roomCode) return;
+  const ref = db.ref('combate_chat/'+roomCode);
+  const cb = ref.on('child_added', snap=>{
+    const msg = snap.val();
+    appendChatMessage(msg);
+    if(!chatOpen && msg.sender!==myPlayer){ chatUnread++; updateChatBadge(); }
+  });
+  chatUnsub = ()=>ref.off('child_added', cb);
+  $('btnChatToggle').style.display='flex';
+}
+
+function stopChatListener(){
+  if(chatUnsub){ chatUnsub(); chatUnsub=null; }
+  $('chatMessages').innerHTML='';
+  $('btnChatToggle').style.display='none';
+  $('chatPanel').style.display='none';
+  chatOpen=false; chatUnread=0; updateChatBadge();
+}
+
+function updateChatBadge(){
+  $('chatBadge').style.display = chatUnread>0 ? 'flex' : 'none';
+}
+
+function appendChatMessage(msg){
+  const box = $('chatMessages');
+  const mine = msg.sender===myPlayer;
+  const row = document.createElement('div');
+  row.style.cssText = `display:flex;flex-direction:column;align-items:${mine?'flex-end':'flex-start'};`;
+  row.innerHTML = `
+    <div style="font-size:10px;color:var(--ink-dim);margin-bottom:2px;">${mine?'Você':(msg.name||'Oponente')}</div>
+    <div style="max-width:78%;padding:8px 12px;border-radius:14px;font-size:13px;line-height:1.4;
+      background:${mine?'linear-gradient(180deg, var(--brass-bright), var(--brass))':'var(--panel-2)'};
+      color:${mine?'#241d05':'var(--ink)'};border:${mine?'none':'1px solid var(--line)'};
+      word-break:break-word;">${escapeHtml(msg.text||'')}</div>`;
+  box.appendChild(row);
+  box.scrollTop = box.scrollHeight;
+}
+
+function escapeHtml(s){
+  const d=document.createElement('div'); d.textContent=s; return d.innerHTML;
+}
+
+function sendChat(){
+  const input = $('chatInput');
+  const text = input.value.trim();
+  if(!text || !roomCode) return;
+  db.ref('combate_chat/'+roomCode).push({
+    sender: myPlayer, name: myName, text, ts: firebase.database.ServerValue.TIMESTAMP
+  });
+  input.value='';
+}
+
+$('btnChatToggle').addEventListener('click', ()=>{
+  chatOpen=true; chatUnread=0; updateChatBadge();
+  $('chatPanel').style.display='block';
+  setTimeout(()=>$('chatInput').focus(), 50);
+});
+$('btnChatClose').addEventListener('click', ()=>{ chatOpen=false; $('chatPanel').style.display='none'; });
+$('btnChatSend').addEventListener('click', sendChat);
+$('chatInput').addEventListener('keydown', e=>{ if(e.key==='Enter') sendChat(); });
+
 /* ---------------- Room code helpers ---------------- */
 function genCode(){
   const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -586,7 +745,10 @@ $('btnCreate').addEventListener('click', async ()=>{
     setup: { p1: null, p2: null },
     log: [],
     winner: null,
-    lastMove: null
+    lastMove: null,
+    timersEnabled: $('timersToggle').checked,
+    setupStartedAt: null,
+    turnStartedAt: null
   };
   await db.ref('combate_games/'+roomCode).set(initial);
   $('roomChip').textContent = 'Sala '+roomCode;
@@ -608,7 +770,11 @@ $('btnJoin').addEventListener('click', async ()=>{
   if(data.players && data.players.p2){ toast('Essa sala já está cheia.'); return; }
   roomCode = code;
   myPlayer = 'p2';
-  await db.ref('combate_games/'+code+'/players/p2').set({name:myName, ready:false});
+  const joinUpdate = { name:myName, ready:false };
+  await db.ref('combate_games/'+code+'/players/p2').set(joinUpdate);
+  if(data.timersEnabled){
+    await db.ref('combate_games/'+code+'/setupStartedAt').set(firebase.database.ServerValue.TIMESTAMP);
+  }
   $('roomChip').textContent = 'Sala '+roomCode;
   showScreen('screen-setup');
   listenRoom();
@@ -623,6 +789,7 @@ $('btnLeaveSetup').addEventListener('click', async ()=>{
     await db.ref(`combate_games/${roomCode}/players/${myPlayer}`).remove();
   }
   if(unsub) unsub();
+  stopChatListener();
   roomCode=null; myPlayer=null; gameState=null;
   setupBoard = new Array(100).fill(null);
   showScreen('screen-home');
@@ -631,6 +798,7 @@ $('btnLeaveSetup').addEventListener('click', async ()=>{
 $('btnBackHome').addEventListener('click', ()=>{
   $('overlay').classList.remove('active');
   if(unsub) unsub();
+  stopChatListener();
   roomCode=null; myPlayer=null; gameState=null;
   setupBoard = new Array(100).fill(null);
   showScreen('screen-home');
@@ -650,6 +818,8 @@ function listenRoom(){
 
 function onStateChange(){
   if(!gameState) return;
+
+  startChatListener();
 
   if(gameState.board){
     const count = gameState.board.filter(Boolean).length;
@@ -804,7 +974,7 @@ function pieceEl(key, mine, revealed){
       wrap.innerHTML = `<div class="abbr">${key==='BAN'?'★':key}</div><div class="rank">${typeof info.rank==='number'?info.rank:''}</div>`;
     }
   } else {
-    wrap.innerHTML = `<div class="abbr">?</div>`;
+    wrap.innerHTML = '';
   }
   return wrap;
 }
@@ -835,7 +1005,7 @@ function autoArrange(){
   cells.forEach((cellIdx, n)=>{ setupBoard[cellIdx] = { key: bag[n] }; });
 }
 
-$('btnReady').addEventListener('click', async ()=>{
+async function submitReady(){
   const placedCount = setupBoard.filter(Boolean).length;
   if(placedCount !== TOTAL_PIECES){ toast('Posicione todas as 40 peças.'); return; }
 
@@ -844,15 +1014,10 @@ $('btnReady').addEventListener('click', async ()=>{
 
   await db.ref(`combate_games/${roomCode}/setup/${myPlayer}`).set(setupData);
   await db.ref(`combate_games/${roomCode}/players/${myPlayer}/ready`).set(true);
+  checkBothReadyAndStart();
+}
 
-  // if I'm p1, watch for both-ready to build the real board (avoid double-write race by letting p1 own this transition)
-  if(myPlayer==='p1'){
-    checkBothReadyAndStart();
-  } else {
-    // p2 also checks in case p1 already had ready=true and is waiting
-    checkBothReadyAndStart();
-  }
-});
+$('btnReady').addEventListener('click', submitReady);
 
 async function checkBothReadyAndStart(){
   const snap = await db.ref(`combate_games/${roomCode}`).get();
@@ -869,7 +1034,8 @@ async function checkBothReadyAndStart(){
       board: board,
       status: 'playing',
       turn: 'p1',
-      log: ['A batalha começou!']
+      log: ['A batalha começou!'],
+      turnStartedAt: data.timersEnabled ? firebase.database.ServerValue.TIMESTAMP : null
     });
   }
 }
@@ -946,7 +1112,8 @@ function renderGameScreen(){
     const piece = gameState.board ? gameState.board[i] : null;
     if(piece){
       const mine = piece.owner===myPlayer;
-      cell.appendChild(pieceEl(piece.key, mine, piece.revealed));
+      const justClashed = gameState.lastMove && gameState.lastMove.wasCombat && gameState.lastMove.to===i;
+      cell.appendChild(pieceEl(piece.key, mine, justClashed));
     }
 
     if(gameState.status==='playing'){
@@ -990,32 +1157,32 @@ async function attemptMove(from, to, isAttack){
 
     if(target.key==='BAN'){
       flagCaptured = true;
-      board[to] = { ...mover, revealed:true };
+      board[to] = { ...mover, revealed:false };
       board[from] = null;
       logLine = `🏁 ${attackerName} capturou a bandeira de ${defenderName}!`;
     } else if(target.key==='BMB'){
       if(mover.key==='CAB'){
-        board[to] = { ...mover, revealed:true };
+        board[to] = { ...mover, revealed:false };
         board[from] = null;
         logLine = `💣 ${attackerName} (Cabo Armeiro) desarmou uma bomba de ${defenderName}!`;
       } else {
         board[from] = null;
-        board[to] = { ...target, revealed:true };
+        board[to] = { ...target, revealed:false };
         logLine = `💥 A bomba de ${defenderName} destruiu o(a) ${atkInfo.name} de ${attackerName}!`;
       }
     } else {
       const atkWinsSpecial = (mover.key==='ESP' && target.key==='MAR');
       if(atkWinsSpecial){
-        board[to] = { ...mover, revealed:true };
+        board[to] = { ...mover, revealed:false };
         board[from] = null;
         logLine = `🗡️ O Espião de ${attackerName} eliminou o Marechal de ${defenderName}!`;
       } else if(atkInfo.rank > defInfo.rank){
-        board[to] = { ...mover, revealed:true };
+        board[to] = { ...mover, revealed:false };
         board[from] = null;
         logLine = `⚔️ ${attackerName}: ${atkInfo.name} venceu ${defInfo.name} de ${defenderName}.`;
       } else if(atkInfo.rank < defInfo.rank){
         board[from] = null;
-        board[to] = { ...target, revealed:true };
+        board[to] = { ...target, revealed:false };
         logLine = `⚔️ ${defenderName}: ${defInfo.name} resistiu ao ataque de ${attackerName} (${atkInfo.name}).`;
       } else {
         board[from] = null;
@@ -1029,8 +1196,9 @@ async function attemptMove(from, to, isAttack){
   const newLog = [...(gameState.log||[]), logLine];
   const update = {
     board, log:newLog,
-    lastMove: { from, to },
+    lastMove: { from, to, wasCombat: isAttack },
     turn: flagCaptured ? gameState.turn : nextTurn,
+    turnStartedAt: (gameState.timersEnabled && !flagCaptured) ? firebase.database.ServerValue.TIMESTAMP : null
   };
 
   if(flagCaptured){
@@ -1256,6 +1424,8 @@ $('btnRematch').addEventListener('click', async ()=>{
     await db.ref(`combate_games/${roomCode}`).update({
       status:'setup', board:null, setup:{p1:null,p2:null}, turn:'p1',
       log:[], winner:null, lastMove:null, leaderboardRecorded:false,
+      setupStartedAt: gameState.timersEnabled ? firebase.database.ServerValue.TIMESTAMP : null,
+      turnStartedAt: null,
       'players/p1/ready': false, 'players/p2/ready': false
     });
   }
