@@ -181,7 +181,6 @@
     display:flex;align-items:center;justify-content:center;
     background:transparent;
     cursor:default;
-    overflow:hidden;
   }
   .cell.light{background:rgba(0,0,0,0);}
   .cell.home-a{background:rgba(230,195,79,.16);}
@@ -826,7 +825,7 @@ $('btnLeaveSetup').addEventListener('click', async ()=>{
   }
   if(unsub) unsub();
   stopChatListener();
-  roomCode=null; myPlayer=null; gameState=null;
+  roomCode=null; myPlayer=null; gameState=null; lastAnimatedMoveSignature=null;
   setupBoard = new Array(100).fill(null);
   showScreen('screen-home');
 });
@@ -835,7 +834,7 @@ $('btnBackHome').addEventListener('click', ()=>{
   $('overlay').classList.remove('active');
   if(unsub) unsub();
   stopChatListener();
-  roomCode=null; myPlayer=null; gameState=null;
+  roomCode=null; myPlayer=null; gameState=null; lastAnimatedMoveSignature=null;
   setupBoard = new Array(100).fill(null);
   showScreen('screen-home');
 });
@@ -1173,6 +1172,29 @@ function renderCasualties(){
   renderCasualtyStrip($('casualtyBottom'), p2Casualties, 'p2');  // below the board — p2's losses (kills made by p1)
 }
 
+let lastAnimatedMoveSignature = null;
+function maybeAnimateSlide(pieceElement, cellIndex, boardEl){
+  const lm = gameState.lastMove;
+  if(!lm || lm.to!==cellIndex || lm.moverSurvived===false) return;
+  const sig = lm.from+'-'+lm.to+'-'+(gameState.log||[]).length;
+  if(sig===lastAnimatedMoveSignature) return;
+  lastAnimatedMoveSignature = sig;
+
+  const cellSize = boardEl.clientWidth/10;
+  const [fr,fc] = rc(lm.from);
+  const [tr,tc] = rc(lm.to);
+  const dx = (fc-tc)*cellSize;
+  const dy = (fr-tr)*cellSize;
+
+  pieceElement.style.zIndex = '10';
+  pieceElement.style.transition = 'none';
+  pieceElement.style.transform = `translate(${dx}px, ${dy}px)`;
+  // force reflow so the browser registers the starting position before animating
+  void pieceElement.offsetWidth;
+  pieceElement.style.transition = 'transform 0.32s ease';
+  pieceElement.style.transform = 'translate(0,0)';
+}
+
 function renderGameScreen(){
   renderCasualties();
   const board=$('gameBoard');
@@ -1208,10 +1230,12 @@ function renderGameScreen(){
     if(piece){
       const mine = piece.owner===myPlayer;
       const justClashed = gameState.lastMove && gameState.lastMove.wasCombat && gameState.lastMove.to===i;
-      cell.appendChild(pieceEl(piece.key, mine, justClashed, piece.owner));
+      const pieceElement = pieceEl(piece.key, mine, justClashed, piece.owner);
+      cell.appendChild(pieceElement);
+      maybeAnimateSlide(pieceElement, i, board);
     }
 
-    if(gameState.status==='playing'){
+    if(gameState.status==='playing' && !moveInFlight){
       if(legal){
         cell.onclick = ()=>attemptMove(selectedCellIndex, i, legal.attack);
       } else if(piece && piece.owner===myPlayer && myTurn){
@@ -1232,18 +1256,22 @@ function renderGameScreen(){
   });
 }
 
+let moveInFlight = false;
 async function attemptMove(from, to, isAttack){
+  if(moveInFlight) return; // block double-taps / duplicate submissions while a move is still syncing
+  moveInFlight = true;
   selectedCellIndex=null; legalMoves=[];
   const board = gameState.board.slice();
   const mover = board[from];
   const target = board[to];
   let logLine = '';
   let flagCaptured = false;
+  let moverSurvived = true;
 
   if(!isAttack){
     board[to] = mover;
     board[from] = null;
-    logLine = `${gameState.players[myPlayer].name} moveu ${RANK_BY_KEY[mover.key].name}.`;
+    logLine = `${gameState.players[myPlayer].name} moveu uma peça.`;
   } else {
     const atkInfo = RANK_BY_KEY[mover.key];
     const defInfo = RANK_BY_KEY[target.key];
@@ -1264,6 +1292,7 @@ async function attemptMove(from, to, isAttack){
         board[from] = null;
         board[to] = { ...target, revealed:false };
         logLine = `💥 A bomba de ${defenderName} destruiu o(a) ${atkInfo.name} de ${attackerName}!`;
+        moverSurvived = false;
       }
     } else {
       const atkWinsSpecial = (mover.key==='ESP' && target.key==='MAR');
@@ -1279,10 +1308,12 @@ async function attemptMove(from, to, isAttack){
         board[from] = null;
         board[to] = { ...target, revealed:false };
         logLine = `⚔️ ${defenderName}: ${defInfo.name} resistiu ao ataque de ${attackerName} (${atkInfo.name}).`;
+        moverSurvived = false;
       } else {
         board[from] = null;
         board[to] = null;
         logLine = `💢 Empate! ${atkInfo.name} de ${attackerName} e ${defInfo.name} de ${defenderName} se eliminaram.`;
+        moverSurvived = false;
       }
     }
   }
@@ -1291,7 +1322,7 @@ async function attemptMove(from, to, isAttack){
   const newLog = [...(gameState.log||[]), logLine];
   const update = {
     board, log:newLog,
-    lastMove: { from, to, wasCombat: isAttack },
+    lastMove: { from, to, wasCombat: isAttack, moverSurvived },
     turn: flagCaptured ? gameState.turn : nextTurn,
     turnStartedAt: (gameState.timersEnabled && !flagCaptured) ? firebase.database.ServerValue.TIMESTAMP : null
   };
@@ -1309,7 +1340,11 @@ async function attemptMove(from, to, isAttack){
     }
   }
 
-  await db.ref(`combate_games/${roomCode}`).update(update);
+  try {
+    await db.ref(`combate_games/${roomCode}`).update(update);
+  } finally {
+    moveInFlight = false;
+  }
 }
 
 function boardHasAnyMove(board, player){
@@ -1513,6 +1548,7 @@ $('btnCloseRanking').addEventListener('click', ()=>showScreen('screen-home'));
 $('btnRematch').addEventListener('click', async ()=>{
   $('overlay').classList.remove('active');
   showWinner._shown = null;
+  lastAnimatedMoveSignature = null;
   setupBoard = new Array(100).fill(null);
   selectedCellIndex=null; legalMoves=[];
   if(myPlayer==='p1'){
