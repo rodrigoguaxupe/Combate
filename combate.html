@@ -141,9 +141,10 @@
   .board-wrap{display:flex;justify-content:center;}
   .casualty-strip{
     display:grid;grid-template-columns:repeat(11,1fr);gap:4px;
-    max-width:520px;margin:0 auto;padding:6px 0;
+    width:100%;max-width:520px;margin:0 auto;padding:6px 0;
   }
-  .casualty-slot{display:flex;flex-direction:column;align-items:center;gap:2px;}
+  .casualty-slot{display:flex;flex-direction:column;align-items:stretch;gap:2px;}
+  .casualty-slot .cs-count{text-align:center;}
   .casualty-slot .cs-piece{
     width:100%;aspect-ratio:1/1;border-radius:50%;
     background-size:cover;background-position:center;
@@ -396,9 +397,9 @@
     </div>
   </div>
 
-  <div id="casualtyTop" class="casualty-strip"></div>
+  <div class="board-wrap"><div id="casualtyTop" class="casualty-strip"></div></div>
   <div class="board-wrap"><div class="board" id="gameBoard"></div></div>
-  <div id="casualtyBottom" class="casualty-strip"></div>
+  <div class="board-wrap"><div id="casualtyBottom" class="casualty-strip"></div></div>
 
   <div class="card" style="padding:10px 14px;">
     <div class="log" id="log"></div>
