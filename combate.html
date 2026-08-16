@@ -962,8 +962,10 @@ function pieceEl(key, mine, revealed){
   const wrap=document.createElement('div');
   let cls='piece '+(mine?'mine':'theirs')+(revealed?' revealed':'');
   if(!mine && !revealed) cls='piece hidden-back';
-  if(key==='BMB') cls+=' bomb';
-  if(key==='BAN') cls+=' flag';
+  if(mine || revealed){
+    if(key==='BMB') cls+=' bomb';
+    if(key==='BAN') cls+=' flag';
+  }
   wrap.className=cls;
   if(mine || revealed){
     if(PIECE_IMG[key]){
