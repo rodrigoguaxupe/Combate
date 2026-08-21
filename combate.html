@@ -199,11 +199,8 @@
   .cell.slot-filled{cursor:pointer;}
   .cell.selected{box-shadow:inset 0 0 0 3px var(--brass-bright);}
   .cell.legal{cursor:pointer;}
-  .cell.legal:after{
-    content:"";position:absolute;width:26%;height:26%;border-radius:50%;background:rgba(230,195,79,.55);
-  }
   .cell.legal.attack:after{
-    width:70%;height:70%;border-radius:6px;background:transparent;border:3px solid rgba(209,87,63,.85);
+    content:"";position:absolute;width:70%;height:70%;border-radius:6px;background:transparent;border:3px solid rgba(209,87,63,.85);
   }
   .cell.last-from{box-shadow:inset 0 0 0 3px rgba(230,195,79,.35);}
   .cell.last-to{box-shadow:inset 0 0 0 3px rgba(230,195,79,.75);}
@@ -436,6 +433,14 @@
   </div>
 </div>
 
+<div class="overlay" id="readyOverlay">
+  <div class="card center">
+    <div class="trophy">✅</div>
+    <h2 class="display">Você está pronto!</h2>
+    <p class="sub" id="readyOverlaySub">Aguardando seu oponente...</p>
+  </div>
+</div>
+
 <div class="overlay" id="overlay">
   <div class="card">
     <div class="trophy" id="overlayEmoji">🏆</div>
@@ -564,7 +569,6 @@ let roomCode = null;
 let myPlayer = null; // 'p1' or 'p2'
 let unsub = null;
 let gameState = null; // live mirror of DB
-let prevPieceCount = null; // used to detect when a piece was eliminated, for sound effects
 let setupBoard = new Array(100).fill(null); // local pre-ready board: {key,rank,player}
 let selectedTrayKey = null;
 let selectedCellIndex = null; // during game phase, selected own piece index
@@ -582,41 +586,23 @@ function ensureAudio(){
 }
 document.addEventListener('pointerdown', ensureAudio, {passive:true});
 
-function playDeathSound(){
+function playTurnSound(){
   ensureAudio();
   if(!audioCtx) return;
   const ctx = audioCtx;
   const now = ctx.currentTime;
-  const dur = 0.38;
-
-  // noisy impact layer
-  const bufferSize = Math.floor(ctx.sampleRate*dur);
-  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-  const data = buffer.getChannelData(0);
-  for(let i=0;i<bufferSize;i++){ data[i] = (Math.random()*2-1) * Math.pow(1-i/bufferSize, 2.2); }
-  const noise = ctx.createBufferSource();
-  noise.buffer = buffer;
-  const filter = ctx.createBiquadFilter();
-  filter.type='lowpass';
-  filter.frequency.setValueAtTime(1400, now);
-  filter.frequency.exponentialRampToValueAtTime(140, now+dur);
-  const noiseGain = ctx.createGain();
-  noiseGain.gain.setValueAtTime(0.7, now);
-  noiseGain.gain.exponentialRampToValueAtTime(0.001, now+dur);
-  noise.connect(filter); filter.connect(noiseGain); noiseGain.connect(ctx.destination);
-
-  // low thud layer
-  const osc = ctx.createOscillator();
-  osc.type='sine';
-  osc.frequency.setValueAtTime(160, now);
-  osc.frequency.exponentialRampToValueAtTime(45, now+0.22);
-  const oscGain = ctx.createGain();
-  oscGain.gain.setValueAtTime(0.8, now);
-  oscGain.gain.exponentialRampToValueAtTime(0.001, now+0.28);
-  osc.connect(oscGain); oscGain.connect(ctx.destination);
-
-  noise.start(now); noise.stop(now+dur);
-  osc.start(now); osc.stop(now+0.3);
+  [520, 700].forEach((freq, i)=>{
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    const gain = ctx.createGain();
+    const start = now + i*0.09;
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(0.16, start+0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start+0.28);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(start); osc.stop(start+0.3);
+  });
 }
 
 function showScreen(id){
@@ -825,7 +811,7 @@ $('btnLeaveSetup').addEventListener('click', async ()=>{
   }
   if(unsub) unsub();
   stopChatListener();
-  roomCode=null; myPlayer=null; gameState=null; lastAnimatedMoveSignature=null;
+  roomCode=null; myPlayer=null; gameState=null; lastAnimatedMoveSignature=null; lastSentSetupProgress=-1; prevTurnForSound=null; $("readyOverlay").classList.remove("active");
   setupBoard = new Array(100).fill(null);
   showScreen('screen-home');
 });
@@ -834,7 +820,7 @@ $('btnBackHome').addEventListener('click', ()=>{
   $('overlay').classList.remove('active');
   if(unsub) unsub();
   stopChatListener();
-  roomCode=null; myPlayer=null; gameState=null; lastAnimatedMoveSignature=null;
+  roomCode=null; myPlayer=null; gameState=null; lastAnimatedMoveSignature=null; lastSentSetupProgress=-1; prevTurnForSound=null; $("readyOverlay").classList.remove("active");
   setupBoard = new Array(100).fill(null);
   showScreen('screen-home');
 });
@@ -856,14 +842,13 @@ function onStateChange(){
 
   startChatListener();
 
-  if(gameState.board){
-    const count = gameState.board.filter(Boolean).length;
-    if(prevPieceCount!==null && count < prevPieceCount){
-      playDeathSound();
+  if(gameState.status==='playing'){
+    if(prevTurnForSound!==null && prevTurnForSound!==myPlayer && gameState.turn===myPlayer){
+      playTurnSound();
     }
-    prevPieceCount = count;
+    prevTurnForSound = gameState.turn;
   } else {
-    prevPieceCount = null; // no board yet (setup phase) — reset so we don't misfire once it appears
+    prevTurnForSound = null;
   }
 
   if(gameState.status==='setup'){
@@ -893,7 +878,8 @@ function remainingCounts(){
 
 function renderSetupScreen(){
   const opp = myPlayer==='p1' ? gameState.players.p2 : gameState.players.p1;
-  $('setupOppLabel').textContent = opp ? opp.name+' está na sala' : 'Aguardando oponente…';
+  const oppProgress = opp ? Math.round(((opp.setupProgress||0)/TOTAL_PIECES)*100) : 0;
+  $('setupOppLabel').textContent = opp ? `${opp.name} está organizando — ${oppProgress}%` : 'Aguardando oponente…';
   $('setupOppDot').className = 'dot' + (opp? '' : ' off');
 
   if(!opp && roomCode){
@@ -909,15 +895,28 @@ function renderSetupScreen(){
   const placedCount = setupBoard.filter(Boolean).length;
   $('setupCount').textContent = placedCount+' / '+TOTAL_PIECES;
   $('btnReady').disabled = placedCount !== TOTAL_PIECES;
+  syncSetupProgress(placedCount);
 
   const myReady = gameState.players[myPlayer] && gameState.players[myPlayer].ready;
   const oppReady = opp && opp.ready;
   if(myReady){
     $('setupHint').textContent = oppReady ? 'Os dois estão prontos — iniciando...' : 'Você está pronto. Esperando seu oponente...';
+    $('readyOverlaySub').textContent = opp ? `Aguardando ${opp.name}... ${oppProgress}% organizado.` : 'Aguardando seu oponente entrar na sala...';
+    $('readyOverlay').classList.add('active');
   } else {
     $('setupHint').textContent = 'Posicione todas as 40 peças no seu território.';
+    $('readyOverlay').classList.remove('active');
   }
 }
+
+let lastSentSetupProgress = -1;
+function syncSetupProgress(placedCount){
+  if(!roomCode || !myPlayer) return;
+  if(placedCount===lastSentSetupProgress) return;
+  lastSentSetupProgress = placedCount;
+  db.ref(`combate_games/${roomCode}/players/${myPlayer}/setupProgress`).set(placedCount).catch(e=>console.error(e));
+}
+
 
 function renderTray(){
   const tray=$('tray'); tray.innerHTML='';
@@ -1173,6 +1172,7 @@ function renderCasualties(){
 }
 
 let lastAnimatedMoveSignature = null;
+let prevTurnForSound = null;
 function maybeAnimateSlide(pieceElement, cellIndex, boardEl){
   const lm = gameState.lastMove;
   if(!lm || lm.to!==cellIndex || lm.moverSurvived===false) return;
@@ -1549,6 +1549,7 @@ $('btnRematch').addEventListener('click', async ()=>{
   $('overlay').classList.remove('active');
   showWinner._shown = null;
   lastAnimatedMoveSignature = null;
+  lastSentSetupProgress = -1;
   setupBoard = new Array(100).fill(null);
   selectedCellIndex=null; legalMoves=[];
   if(myPlayer==='p1'){
